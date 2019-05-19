@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -53,6 +53,10 @@ public class PubSubConnectionEntry {
         this.subscribedChannelsAmount = new AtomicInteger(subscriptionsPerConnection);
     }
 
+    public int countListeners() {
+        return channelListeners.size();
+    }
+    
     public boolean hasListeners(ChannelName channelName) {
         return channelListeners.containsKey(channelName);
     }
@@ -100,7 +104,7 @@ public class PubSubConnectionEntry {
         for (RedisPubSubListener<?> listener : listeners) {
             removeListener(channelName, listener);
         }
-        return !listeners.isEmpty();
+        return listeners.isEmpty();
     }
     
     // TODO optimize
@@ -108,13 +112,13 @@ public class PubSubConnectionEntry {
         Queue<RedisPubSubListener<?>> listeners = channelListeners.get(channelName);
         for (RedisPubSubListener<?> listener : listeners) {
             if (listener instanceof PubSubMessageListener) {
-                if (((PubSubMessageListener)listener).getListener() == msgListener) {
+                if (((PubSubMessageListener<?>) listener).getListener() == msgListener) {
                     removeListener(channelName, listener);
                     return true;
                 }
             }
             if (listener instanceof PubSubPatternMessageListener) {
-                if (((PubSubPatternMessageListener)listener).getListener() == msgListener) {
+                if (((PubSubPatternMessageListener<?>) listener).getListener() == msgListener) {
                     removeListener(channelName, listener);
                     return true;
                 }
@@ -134,7 +138,7 @@ public class PubSubConnectionEntry {
         return false;
     }
 
-    private void removeListener(ChannelName channelName, RedisPubSubListener<?> listener) {
+    public void removeListener(ChannelName channelName, RedisPubSubListener<?> listener) {
         Queue<RedisPubSubListener<?>> queue = channelListeners.get(channelName);
         synchronized (queue) {
             if (queue.remove(listener) && queue.isEmpty()) {

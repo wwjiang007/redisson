@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -78,7 +78,7 @@ public class LocalCachedMessageCodec extends BaseCodec {
             
             if (type == 0x3) {
                 byte len = buf.readByte();
-                CharSequence requestId = buf.readCharSequence(len, CharsetUtil.UTF_8);
+                CharSequence requestId = buf.readCharSequence(len, CharsetUtil.US_ASCII);
                 long timeout = buf.readLong();
                 int hashesCount = buf.readInt();
                 byte[][] hashes = new byte[hashesCount][];

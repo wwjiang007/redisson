@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import java.net.URI;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.redisson.api.NodeType;
 import org.redisson.api.RFuture;
@@ -43,8 +44,6 @@ import org.redisson.misc.URIBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import io.netty.util.internal.PlatformDependent;
-
 /**
  * 
  * @author Nikita Koksharov
@@ -58,7 +57,7 @@ public class LoadBalancerManager {
     private final PubSubConnectionPool pubSubConnectionPool;
     private final SlaveConnectionPool slaveConnectionPool;
     
-    private final Map<RedisClient, ClientConnectionsEntry> client2Entry = PlatformDependent.newConcurrentHashMap();
+    private final Map<RedisClient, ClientConnectionsEntry> client2Entry = new ConcurrentHashMap<>();
 
     public LoadBalancerManager(MasterSlaveServersConfig config, ConnectionManager connectionManager, MasterSlaveEntry entry) {
         this.connectionManager = connectionManager;
@@ -87,10 +86,10 @@ public class LoadBalancerManager {
         };
 
         RFuture<Void> slaveFuture = slaveConnectionPool.add(entry);
-        slaveFuture.addListener(listener);
+        slaveFuture.onComplete(listener);
         
         RFuture<Void> pubSubFuture = pubSubConnectionPool.add(entry);
-        pubSubFuture.addListener(listener);
+        pubSubFuture.onComplete(listener);
         return result;
     }
 
@@ -126,7 +125,6 @@ public class LoadBalancerManager {
         return unfreeze(entry, freezeReason);
     }
 
-    
     public boolean unfreeze(ClientConnectionsEntry entry, FreezeReason freezeReason) {
         synchronized (entry) {
             if (!entry.isFreezed()) {
@@ -138,6 +136,9 @@ public class LoadBalancerManager {
                 entry.resetFirstFail();
                 entry.setFreezed(false);
                 entry.setFreezeReason(null);
+                
+                slaveConnectionPool.initConnections(entry);
+                pubSubConnectionPool.initConnections(entry);
                 return true;
             }
         }
@@ -154,15 +155,21 @@ public class LoadBalancerManager {
         return freeze(connectionEntry, freezeReason);
     }
 
+    @SuppressWarnings("BooleanExpressionComplexity")
     public ClientConnectionsEntry freeze(ClientConnectionsEntry connectionEntry, FreezeReason freezeReason) {
-        if (connectionEntry == null) {
+        if (connectionEntry == null || (connectionEntry.isFailed() 
+                && connectionEntry.getFreezeReason() == FreezeReason.RECONNECT
+                    && freezeReason == FreezeReason.RECONNECT)) {
             return null;
         }
 
         synchronized (connectionEntry) {
             // only RECONNECT freeze reason could be replaced
             if (connectionEntry.getFreezeReason() == null
-                    || connectionEntry.getFreezeReason() == FreezeReason.RECONNECT) {
+                    || connectionEntry.getFreezeReason() == FreezeReason.RECONNECT
+                        || (freezeReason == FreezeReason.MANAGER 
+                                && connectionEntry.getFreezeReason() != FreezeReason.MANAGER 
+                                    && connectionEntry.getNodeType() == NodeType.SLAVE)) {
                 connectionEntry.setFreezed(true);
                 connectionEntry.setFreezeReason(freezeReason);
                 return connectionEntry;
@@ -216,7 +223,7 @@ public class LoadBalancerManager {
         return null;
     }
 
-    private ClientConnectionsEntry getEntry(RedisClient redisClient) {
+    public ClientConnectionsEntry getEntry(RedisClient redisClient) {
         return client2Entry.get(redisClient);
     }
 
@@ -259,7 +266,7 @@ public class LoadBalancerManager {
         RPromise<Void> result = new RedissonPromise<Void>();
         CountableListener<Void> listener = new CountableListener<Void>(result, null, client2Entry.values().size());
         for (ClientConnectionsEntry entry : client2Entry.values()) {
-            entry.getClient().shutdownAsync().addListener(listener);
+            entry.getClient().shutdownAsync().onComplete(listener);
         }
         return result;
     }

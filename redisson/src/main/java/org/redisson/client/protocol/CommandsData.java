@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -85,8 +85,8 @@ public class CommandsData implements QueueCommand {
     public List<CommandData<Object, Object>> getPubSubOperations() {
         List<CommandData<Object, Object>> result = new ArrayList<CommandData<Object, Object>>();
         for (CommandData<?, ?> commandData : commands) {
-            if (RedisCommands.PUBSUB_COMMANDS.equals(commandData.getCommand().getName())) {
-                result.add((CommandData<Object, Object>)commandData);
+            if (RedisCommands.PUBSUB_COMMANDS.contains(commandData.getCommand().getName())) {
+                result.add((CommandData<Object, Object>) commandData);
             }
         }
         return result;
@@ -105,6 +105,11 @@ public class CommandsData implements QueueCommand {
     @Override
     public boolean isExecuted() {
         return promise.isDone();
+    }
+
+    @Override
+    public boolean isBlockingCommand() {
+        return false;
     }
 
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,8 +38,6 @@ import io.netty.channel.group.ChannelGroup;
 import io.netty.util.Timeout;
 import io.netty.util.Timer;
 import io.netty.util.TimerTask;
-import io.netty.util.concurrent.Future;
-import io.netty.util.concurrent.FutureListener;
 
 /**
  * 
@@ -126,16 +124,13 @@ public class ConnectionWatchdog extends ChannelInboundHandlerAdapter {
                                     connection.getRedisClient().getAddr(), channel.localAddress(), channel.remoteAddress());
                         } else {
                             RedisConnection c = RedisConnection.getFrom(channel);
-                            c.getConnectionPromise().addListener(new FutureListener<RedisConnection>() {
-                                @Override
-                                public void operationComplete(Future<RedisConnection> future) throws Exception {
-                                    if (future.isSuccess()) {
-                                        refresh(connection, channel);
-                                        log.debug("{} connected to {}, command: {}", connection, connection.getRedisClient().getAddr(), connection.getCurrentCommand());
-                                    } else {
-                                        log.warn("Can't connect " + connection + " to " + connection.getRedisClient().getAddr(), future.cause());
-                                    }
-                                    
+                            c.getConnectionPromise().onComplete((res, e) -> {
+                                if (e == null) {
+                                    refresh(connection, channel);
+                                    log.debug("{} connected to {}, command: {}", connection, connection.getRedisClient().getAddr(), connection.getCurrentCommand());
+                                } else {
+                                    channel.close();
+                                    reconnect(connection, nextAttempt);
                                 }
                             });
                             return;

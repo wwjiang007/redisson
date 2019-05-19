@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -60,7 +60,7 @@ public class ReplicatedServersConfig extends BaseMasterSlaveServersConfig<Replic
      * @param addresses in <code>host:port</code> format
      * @return config
      */
-    public ReplicatedServersConfig addNodeAddress(String ... addresses) {
+    public ReplicatedServersConfig addNodeAddress(String... addresses) {
         for (String address : addresses) {
             nodeAddresses.add(URIBuilder.create(address));
         }

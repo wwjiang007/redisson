@@ -29,6 +29,7 @@ import org.redisson.api.RBatch;
 import org.redisson.api.RBucket;
 import org.redisson.api.RFuture;
 import org.redisson.api.RListAsync;
+import org.redisson.api.RMap;
 import org.redisson.api.RMapAsync;
 import org.redisson.api.RMapCacheAsync;
 import org.redisson.api.RScoredSortedSet;
@@ -106,6 +107,27 @@ public class RedissonBatchTest extends BaseTest {
         assertThat(b2f2.get()).isEqualTo(2d);
     }
     
+    @Test(timeout = 15000)
+    public void testPerformance() {
+        RMap<String, String> map = redisson.getMap("map");
+        Map<String, String> m = new HashMap<String, String>();
+        for (int j = 0; j < 1000; j++) {
+            m.put("" + j, "" + j);
+        }
+        map.putAll(m);
+        
+        for (int i = 0; i < 10000; i++) {
+            RBatch rBatch = redisson.createBatch();
+            RMapAsync<String, String> m1 = rBatch.getMap("map");
+            m1.getAllAsync(m.keySet());
+            try {
+                rBatch.execute();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+    
     @Test
     public void testConnectionLeakAfterError() throws InterruptedException {
         Config config = createConfig();
@@ -118,7 +140,7 @@ public class RedissonBatchTest extends BaseTest {
         
         BatchOptions batchOptions = BatchOptions.defaults().executionMode(ExecutionMode.REDIS_WRITE_ATOMIC);
         RBatch batch = redisson.createBatch(batchOptions);
-        for (int i = 0; i < 200000; i++) {
+        for (int i = 0; i < 300000; i++) {
             batch.getBucket("test").setAsync(123);
         }
         
@@ -139,6 +161,8 @@ public class RedissonBatchTest extends BaseTest {
         
         assertThat(redisson.getBucket("test1").get()).isEqualTo(1);
         assertThat(redisson.getBucket("test2").get()).isEqualTo(2);
+        
+        redisson.shutdown();
     }
     
     @Test
@@ -196,25 +220,34 @@ public class RedissonBatchTest extends BaseTest {
         assertThat(result.getSyncedSlaves()).isEqualTo(1);
         
         process.shutdown();
+        redisson.shutdown();
     }
 
     @Test
     public void testWriteTimeout() {
         Config config = createConfig();
-        config.useSingleServer().setTimeout(15000);
+        config.useSingleServer().setTimeout(3000);
         RedissonClient redisson = Redisson.create(config);
 
         RBatch batch = redisson.createBatch(batchOptions);
         RMapCacheAsync<String, String> map = batch.getMapCache("test");
-        for (int i = 0; i < 200000; i++) {
+        int total = 200000;
+        for (int i = 0; i < total; i++) {
             RFuture<String> f = map.putAsync("" + i, "" + i, 5, TimeUnit.MINUTES);
             if (batchOptions.getExecutionMode() == ExecutionMode.REDIS_WRITE_ATOMIC) {
                 f.syncUninterruptibly();
             }
         }
         
+        long s = System.currentTimeMillis();
         batch.execute();
-        assertThat(redisson.getMapCache("test").size()).isEqualTo(200000);
+        long executionTime = System.currentTimeMillis() - s;
+        if (batchOptions.getExecutionMode() == ExecutionMode.IN_MEMORY) {
+            assertThat(executionTime).isLessThan(22000);
+        } else {
+            assertThat(executionTime).isLessThan(3500);
+        }
+        assertThat(redisson.getMapCache("test").size()).isEqualTo(total);
         redisson.shutdown();
     }
     
@@ -307,6 +340,7 @@ public class RedissonBatchTest extends BaseTest {
         }
         
         process.shutdown();
+        redisson.shutdown();
     }
 
     

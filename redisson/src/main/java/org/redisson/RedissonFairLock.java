@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 package org.redisson;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 
@@ -44,7 +45,7 @@ public class RedissonFairLock extends RedissonLock implements RLock {
     private final String threadsQueueName;
     private final String timeoutSetName;
 
-    protected RedissonFairLock(CommandAsyncExecutor commandExecutor, String name) {
+    public RedissonFairLock(CommandAsyncExecutor commandExecutor, String name) {
         super(commandExecutor, name);
         this.commandExecutor = commandExecutor;
         threadsQueueName = prefixName("redisson_lock_queue", name);
@@ -53,19 +54,19 @@ public class RedissonFairLock extends RedissonLock implements RLock {
     
     @Override
     protected RedissonLockEntry getEntry(long threadId) {
-        return PUBSUB.getEntry(getEntryName() + ":" + threadId);
+        return pubSub.getEntry(getEntryName() + ":" + threadId);
     }
 
     @Override
     protected RFuture<RedissonLockEntry> subscribe(long threadId) {
-        return PUBSUB.subscribe(getEntryName() + ":" + threadId, 
-                getChannelName() + ":" + getLockName(threadId), commandExecutor.getConnectionManager().getSubscribeService());
+        return pubSub.subscribe(getEntryName() + ":" + threadId, 
+                getChannelName() + ":" + getLockName(threadId));
     }
 
     @Override
     protected void unsubscribe(RFuture<RedissonLockEntry> future, long threadId) {
-        PUBSUB.unsubscribe(future.getNow(), getEntryName() + ":" + threadId, 
-                getChannelName() + ":" + getLockName(threadId), commandExecutor.getConnectionManager().getSubscribeService());
+        pubSub.unsubscribe(future.getNow(), getEntryName() + ":" + threadId, 
+                getChannelName() + ":" + getLockName(threadId));
     }
 
     @Override
@@ -217,7 +218,7 @@ public class RedissonFairLock extends RedissonLock implements RLock {
                 "end; " +
                 "return 1; ",
                 Arrays.<Object>asList(getName(), threadsQueueName, timeoutSetName, getChannelName()), 
-                LockPubSub.unlockMessage, internalLockLeaseTime, getLockName(threadId), System.currentTimeMillis());
+                LockPubSub.UNLOCK_MESSAGE, internalLockLeaseTime, getLockName(threadId), System.currentTimeMillis());
     }
     
     @Override
@@ -228,6 +229,12 @@ public class RedissonFairLock extends RedissonLock implements RLock {
     @Override
     public RFuture<Boolean> deleteAsync() {
         return commandExecutor.writeAsync(getName(), RedisCommands.DEL_OBJECTS, getName(), threadsQueueName, timeoutSetName);
+    }
+    
+    @Override
+    public RFuture<Long> sizeInMemoryAsync() {
+        List<Object> keys = Arrays.<Object>asList(getName(), threadsQueueName, timeoutSetName);
+        return super.sizeInMemoryAsync(keys);
     }
     
     @Override
@@ -262,7 +269,7 @@ public class RedissonFairLock extends RedissonLock implements RLock {
     
     @Override
     public RFuture<Boolean> forceUnlockAsync() {
-        cancelExpirationRenewal();
+        cancelExpirationRenewal(null);
         return commandExecutor.evalWriteAsync(getName(), LongCodec.INSTANCE, RedisCommands.EVAL_BOOLEAN,
                 // remove stale threads
                 "while true do "
@@ -289,7 +296,7 @@ public class RedissonFairLock extends RedissonLock implements RLock {
                 "end; " + 
                 "return 0;",
                 Arrays.<Object>asList(getName(), threadsQueueName, timeoutSetName, getChannelName()), 
-                LockPubSub.unlockMessage, System.currentTimeMillis());
+                LockPubSub.UNLOCK_MESSAGE, System.currentTimeMillis());
     }
 
 }

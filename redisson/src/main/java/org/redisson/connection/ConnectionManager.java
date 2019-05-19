@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,6 +37,7 @@ import org.redisson.pubsub.PublishSubscribeService;
 import io.netty.channel.EventLoopGroup;
 import io.netty.util.Timeout;
 import io.netty.util.TimerTask;
+import io.netty.util.concurrent.Future;
 
 /**
  *
@@ -44,6 +45,8 @@ import io.netty.util.TimerTask;
  *
  */
 public interface ConnectionManager {
+    
+    URI applyNatMap(URI address);
     
     UUID getId();
     
@@ -107,6 +110,6 @@ public interface ConnectionManager {
 
     InfinitySemaphoreLatch getShutdownLatch();
     
-    RFuture<Boolean> getShutdownPromise();
+    Future<Void> getShutdownPromise();
 
 }

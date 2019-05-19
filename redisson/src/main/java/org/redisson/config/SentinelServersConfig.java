@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -72,7 +72,7 @@ public class SentinelServersConfig extends BaseMasterSlaveServersConfig<Sentinel
      * @param addresses of Redis
      * @return config
      */
-    public SentinelServersConfig addSentinelAddress(String ... addresses) {
+    public SentinelServersConfig addSentinelAddress(String... addresses) {
         for (String address : addresses) {
             sentinelAddresses.add(URIBuilder.create(address));
         }

@@ -1,5 +1,5 @@
 /**
- * Copyright 2018 Nikita Koksharov
+ * Copyright (c) 2013-2019 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -84,7 +84,7 @@ public class MasterSlaveServersConfig extends BaseMasterSlaveServersConfig<Maste
      * @param addresses of Redis
      * @return config
      */
-    public MasterSlaveServersConfig addSlaveAddress(String ... addresses) {
+    public MasterSlaveServersConfig addSlaveAddress(String... addresses) {
         for (String address : addresses) {
             slaveAddresses.add(URIBuilder.create(address));
         }
