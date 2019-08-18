@@ -50,6 +50,7 @@ import org.redisson.client.protocol.CommandsData;
 import org.redisson.client.protocol.RedisCommand;
 import org.redisson.client.protocol.RedisCommands;
 import org.redisson.connection.ConnectionManager;
+import org.redisson.connection.MasterSlaveConnectionManager;
 import org.redisson.connection.MasterSlaveEntry;
 import org.redisson.connection.NodeSource;
 import org.redisson.connection.NodeSource.Redirect;
@@ -304,7 +305,7 @@ public class CommandBatchService extends CommandAsyncService {
                     }
 
                     RPromise<Void> main = new RedissonPromise<Void>();
-                    ChannelFuture future = connection.send(new CommandsData(main, list, new ArrayList(entry.getCommands())));
+                    ChannelFuture future = connection.send(new CommandsData(main, list, new ArrayList(entry.getCommands()), options.isSkipResult(), false, true));
                     details.setWriteFuture(future);
                 } else {
                     RPromise<Void> main = new RedissonPromise<Void>();
@@ -467,8 +468,14 @@ public class CommandBatchService extends CommandAsyncService {
                                     if (data.getCommand().getName().equals(RedisCommands.EXEC.getName())) {
                                         break;
                                     }
+                                    
                                     RPromise<Object> promise = (RPromise<Object>) data.getPromise();
-                                    promise.trySuccess(resultIter.next());
+                                    if (resultIter.hasNext()) {
+                                        promise.trySuccess(resultIter.next());
+                                    } else {
+                                        // fix for https://github.com/redisson/redisson/issues/2212
+                                        promise.trySuccess(null);
+                                    }
                                 }
                             }
                             
@@ -679,7 +686,14 @@ public class CommandBatchService extends CommandAsyncService {
                                 return;
                             }
                             details.incAttempt();
-                            Timeout timeout = connectionManager.newTimeout(this, interval, TimeUnit.MILLISECONDS);
+                            
+                            Timeout timeout;
+                            if (interval > 0 && attempts > 0) {
+                                timeout = connectionManager.newTimeout(this, interval, TimeUnit.MILLISECONDS);
+                            } else {
+                                timeout = MasterSlaveConnectionManager.DUMMY_TIMEOUT;            
+                            }
+
                             details.setTimeout(timeout);
                             return;
                         }
@@ -714,7 +728,12 @@ public class CommandBatchService extends CommandAsyncService {
             }
         };
 
-        Timeout timeout = connectionManager.newTimeout(retryTimerTask, interval, TimeUnit.MILLISECONDS);
+        Timeout timeout;
+        if (interval > 0 && attempts > 0) {
+            timeout = connectionManager.newTimeout(retryTimerTask, interval, TimeUnit.MILLISECONDS);
+        } else {
+            timeout = MasterSlaveConnectionManager.DUMMY_TIMEOUT;            
+        }
         details.setTimeout(timeout);
         mainPromise.onComplete(mainPromiseListener);
 

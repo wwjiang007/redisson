@@ -47,6 +47,7 @@ import org.redisson.api.RQueueRx;
 import org.redisson.api.RRateLimiterRx;
 import org.redisson.api.RReadWriteLockRx;
 import org.redisson.api.RRemoteService;
+import org.redisson.api.RRingBufferRx;
 import org.redisson.api.RScoredSortedSetRx;
 import org.redisson.api.RScriptRx;
 import org.redisson.api.RSemaphoreRx;
@@ -333,6 +334,16 @@ public class RedissonRx implements RedissonRxClient {
     }
 
     @Override
+    public <V> RRingBufferRx<V> getRingBuffer(String name) {
+        return RxProxyBuilder.create(commandExecutor, new RedissonRingBuffer<V>(commandExecutor, name, null), RRingBufferRx.class);
+    }
+
+    @Override
+    public <V> RRingBufferRx<V> getRingBuffer(String name, Codec codec) {
+        return RxProxyBuilder.create(commandExecutor, new RedissonRingBuffer<V>(codec, commandExecutor, name, null), RRingBufferRx.class);
+    }
+
+    @Override
     public <V> RBlockingQueueRx<V> getBlockingQueue(String name) {
         RedissonBlockingQueue<V> queue = new RedissonBlockingQueue<V>(commandExecutor, name, null);
         return RxProxyBuilder.create(commandExecutor, queue, 
@@ -401,11 +412,9 @@ public class RedissonRx implements RedissonRxClient {
 
     @Override
     public RRemoteService getRemoteService(String name, Codec codec) {
-        String executorId;
-        if (codec == connectionManager.getCodec()) {
-            executorId = connectionManager.getId().toString();
-        } else {
-            executorId = connectionManager.getId() + ":" + name;
+        String executorId = connectionManager.getId();
+        if (codec != connectionManager.getCodec()) {
+            executorId = executorId + ":" + name;
         }
         return new RedissonRemoteService(codec, name, commandExecutor, executorId, responses);
     }
@@ -528,6 +537,11 @@ public class RedissonRx implements RedissonRxClient {
         RedissonBlockingDeque<V> deque = new RedissonBlockingDeque<V>(codec, commandExecutor, name, null);
         return RxProxyBuilder.create(commandExecutor, deque, 
                 new RedissonBlockingDequeRx<V>(deque), RBlockingDequeRx.class);
+    }
+
+    @Override
+    public String getId() {
+        return commandExecutor.getConnectionManager().getId();
     }
     
 }

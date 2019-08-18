@@ -17,13 +17,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 import org.awaitility.Duration;
+import org.joor.Reflect;
 import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Test;
 import org.redisson.api.MapOptions;
+import org.redisson.api.MapOptions.WriteMode;
 import org.redisson.api.RMap;
 import org.redisson.api.RMapCache;
-import org.redisson.api.MapOptions.WriteMode;
 import org.redisson.api.map.event.EntryCreatedListener;
 import org.redisson.api.map.event.EntryEvent;
 import org.redisson.api.map.event.EntryExpiredListener;
@@ -37,8 +38,6 @@ import org.redisson.client.codec.StringCodec;
 import org.redisson.codec.CompositeCodec;
 import org.redisson.eviction.EvictionScheduler;
 
-import mockit.Deencapsulation;
-
 public class RedissonMapCacheTest extends BaseMapTest {
 
     @Test
@@ -46,7 +45,7 @@ public class RedissonMapCacheTest extends BaseMapTest {
         RMapCache<String, String> cache = redisson.getMapCache("test");
         
         EvictionScheduler evictionScheduler = ((Redisson)redisson).getEvictionScheduler();
-        Map<?, ?> map = Deencapsulation.getField(evictionScheduler, "tasks");
+        Map<?, ?> map = Reflect.on(evictionScheduler).get("tasks");
         assertThat(map.isEmpty()).isFalse();
         cache.destroy();
         assertThat(map.isEmpty()).isTrue();
@@ -643,6 +642,39 @@ public class RedissonMapCacheTest extends BaseMapTest {
         SimpleValue val1 = map.get(new SimpleKey("1"));
         assertThat(val1).isNull();
         map.destroy();
+    }
+
+    @Test
+    public void testReplaceValueTTLIdleUpdate() throws InterruptedException {
+        RMapCache<SimpleKey, SimpleValue> map = null;
+		SimpleValue val1;
+		try {
+			map = redisson.getMapCache("simple");
+			map.put(new SimpleKey("1"), new SimpleValue("2"), 2, TimeUnit.SECONDS, 1, TimeUnit.SECONDS);
+
+			Thread.sleep(750);
+		
+			// update value, would like idle timeout to be refreshed
+			SimpleValue res = map.replace(new SimpleKey("1"), new SimpleValue("3"));
+			assertThat(res).isNotNull();
+
+			Thread.sleep(750);
+
+			// if idle timeout has been updated val1 will be not be null, else it will be null
+			val1 = map.get(new SimpleKey("1"));
+			assertThat(val1).isNotNull(); 
+
+			Thread.sleep(750);
+			
+			// val1 will have expired due to TTL
+			val1 = map.get(new SimpleKey("1"));
+			assertThat(val1).isNull();
+
+		} catch (Exception e) {
+			e.printStackTrace();
+		} finally {
+	        map.remove(new SimpleKey("1"));
+		}
     }
 
     @Test

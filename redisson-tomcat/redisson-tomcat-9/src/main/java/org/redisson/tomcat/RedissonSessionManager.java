@@ -17,10 +17,12 @@ package org.redisson.tomcat;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Map.Entry;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 import javax.servlet.http.HttpSession;
 
@@ -34,6 +36,7 @@ import org.apache.catalina.session.ManagerBase;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 import org.redisson.Redisson;
+import org.redisson.api.RSet;
 import org.redisson.api.RMap;
 import org.redisson.api.RTopic;
 import org.redisson.api.RedissonClient;
@@ -67,8 +70,12 @@ public class RedissonSessionManager extends ManagerBase {
 
     private final String nodeId = UUID.randomUUID().toString();
 
-    private UpdateValve updateValve;
+    private static UpdateValve updateValve;
 
+    private static Set<String> contextInUse = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
+
+    private MessageListener messageListener;
+    
     private Codec codecToUse;
 
     public String getNodeId() { return nodeId; }
@@ -143,6 +150,12 @@ public class RedissonSessionManager extends ManagerBase {
         }
         return session;
     }
+
+    public RSet<String> getNotifiedNodes(String sessionId) {
+        String separator = keyPrefix == null || keyPrefix.isEmpty() ? "" : ":";
+        String name = keyPrefix + separator + "redisson:tomcat_notified_nodes:" + sessionId;
+        return redisson.getSet(name, StringCodec.INSTANCE);
+    }
     
     public RMap<String, Object> getMap(String sessionId) {
         String separator = keyPrefix == null || keyPrefix.isEmpty() ? "" : ":";
@@ -158,6 +171,10 @@ public class RedissonSessionManager extends ManagerBase {
     
     @Override
     public Session findSession(String id) throws IOException {
+        return findSession(id, true);
+    }
+    
+    private Session findSession(String id, boolean notify) throws IOException {
         Session result = super.findSession(id);
         if (result == null) {
             if (id != null) {
@@ -168,14 +185,14 @@ public class RedissonSessionManager extends ManagerBase {
                     log.error("Can't read session object by id: " + id, e);
                 }
 
-                if (attrs.isEmpty()) {	
+                if (attrs.isEmpty() || (broadcastSessionEvents && getNotifiedNodes(id).contains(nodeId))) {
                     log.info("Session " + id + " can't be found");
-                    return null;	
+                    return null;    
                 }
                 
                 RedissonSession session = (RedissonSession) createEmptySession();
                 session.load(attrs);
-                session.setId(id);
+                session.setId(id, notify);
                 
                 session.access();
                 session.endAccess();
@@ -192,7 +209,7 @@ public class RedissonSessionManager extends ManagerBase {
     
     @Override
     public Session createEmptySession() {
-        return new RedissonSession(this, readMode, updateMode);
+        return new RedissonSession(this, readMode, updateMode, broadcastSessionEvents);
     }
     
     @Override
@@ -237,18 +254,20 @@ public class RedissonSessionManager extends ManagerBase {
             throw new LifecycleException(e);
         }
         
-        if (updateMode == UpdateMode.AFTER_REQUEST) {
-            Pipeline pipeline = getEngine().getPipeline();
-            if (updateValve != null) { // in case startInternal is called without stopInternal cleaning the updateValve
-                pipeline.removeValve(updateValve);
+        Pipeline pipeline = getEngine().getPipeline();
+        synchronized (pipeline) {
+            contextInUse.add(getContext().getName());
+            if (updateMode == UpdateMode.AFTER_REQUEST) {
+                if (updateValve == null) {
+                    updateValve = new UpdateValve();
+                    pipeline.addValve(updateValve);
+                }
             }
-            updateValve = new UpdateValve(this);
-            pipeline.addValve(updateValve);			
         }
         
         if (readMode == ReadMode.MEMORY || broadcastSessionEvents) {
             RTopic updatesTopic = getTopic();
-            updatesTopic.addListener(AttributeMessage.class, new MessageListener<AttributeMessage>() {
+            messageListener = new MessageListener<AttributeMessage>() {
                 
                 @Override
                 public void onMessage(CharSequence channel, AttributeMessage msg) {
@@ -289,14 +308,27 @@ public class RedissonSessionManager extends ManagerBase {
                                 if (s == null) {
                                     throw new IllegalStateException("Unable to find session: " + msg.getSessionId());
                                 }
-                        }
+                            }
+                            
+                            if (msg instanceof SessionDestroyedMessage) {
+                                Session s = findSession(msg.getSessionId(), false);
+                                if (s == null) {
+                                    throw new IllegalStateException("Unable to find session: " + msg.getSessionId());
+                                }
+                                s.expire();
+                                RSet<String> set = getNotifiedNodes(msg.getSessionId());
+                                set.add(nodeId);
+                            }
+                            
                         }
 
                     } catch (Exception e) {
                         log.error("Unable to handle topic message", e);
                     }
                 }
-            });
+            };
+            
+            updatesTopic.addListener(AttributeMessage.class, messageListener);
         }
         
         setState(LifecycleState.STARTING);
@@ -329,9 +361,21 @@ public class RedissonSessionManager extends ManagerBase {
         
         setState(LifecycleState.STOPPING);
         
-        if (updateValve != null) {
-            getEngine().getPipeline().removeValve(updateValve);
-            updateValve = null;
+        Pipeline pipeline = getEngine().getPipeline();
+        synchronized (pipeline) {
+            contextInUse.remove(getContext().getName());
+            //remove valves when all of the RedissonSessionManagers (web apps) are not in use anymore
+            if (contextInUse.isEmpty()) {
+                if (updateValve != null) {
+                    pipeline.removeValve(updateValve);
+                    updateValve = null;
+                }
+            }
+        }
+        
+        if (messageListener != null) {
+             RTopic updatesTopic = getTopic();
+             updatesTopic.removeListener(messageListener);
         }
 
         codecToUse = null;

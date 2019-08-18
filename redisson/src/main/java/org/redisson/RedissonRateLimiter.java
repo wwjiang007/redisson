@@ -55,7 +55,7 @@ public class RedissonRateLimiter extends RedissonObject implements RRateLimiter 
     }
     
     String getClientValueName() {
-        return suffixName(getValueName(), commandExecutor.getConnectionManager().getId().toString());
+        return suffixName(getValueName(), commandExecutor.getConnectionManager().getId());
     }
     
     @Override
@@ -126,7 +126,7 @@ public class RedissonRateLimiter extends RedissonObject implements RRateLimiter 
     public RFuture<Boolean> tryAcquireAsync(long permits, long timeout, TimeUnit unit) {
         RPromise<Boolean> promise = new RedissonPromise<Boolean>();
         long timeoutInMillis = -1;
-        if (timeout > 0) {
+        if (timeout >= 0) {
             timeoutInMillis = unit.toMillis(timeout);
         }
         tryAcquireAsync(permits, promise, timeoutInMillis);
@@ -206,7 +206,7 @@ public class RedissonRateLimiter extends RedissonObject implements RRateLimiter 
                      + "return nil; "
               + "end;",
                 Arrays.<Object>asList(getName(), getValueName(), getClientValueName()), 
-                value, commandExecutor.getConnectionManager().getId().toString());
+                value, commandExecutor.getConnectionManager().getId());
     }
 
     @Override

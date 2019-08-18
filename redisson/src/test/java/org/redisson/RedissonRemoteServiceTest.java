@@ -293,6 +293,53 @@ public class RedissonRemoteServiceTest extends BaseTest {
         remoteService.deregister(RemoteInterface.class);
     }
 
+    @Test
+    public void testPendingInvocations() throws InterruptedException, ExecutionException {
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        RRemoteService rs = redisson.getRemoteService();
+        rs.register(RemoteInterface.class, new RemoteImpl(), 1, executor);
+        
+        assertThat(rs.getPendingInvocations(RemoteInterface.class)).isEqualTo(0);
+        
+        RemoteInterfaceAsync ri = redisson.getRemoteService().get(RemoteInterfaceAsync.class);
+        
+        for (int i = 0; i < 5; i++) {
+            ri.timeoutMethod();
+        }
+        Thread.sleep(1000);
+        assertThat(rs.getPendingInvocations(RemoteInterface.class)).isEqualTo(4);
+        Thread.sleep(9000);
+        assertThat(rs.getPendingInvocations(RemoteInterface.class)).isEqualTo(0);
+
+        executor.shutdown();
+        executor.awaitTermination(1, TimeUnit.MINUTES);
+        
+        rs.deregister(RemoteInterface.class);
+    }
+    
+    @Test
+    public void testFreeWorkers() throws InterruptedException, ExecutionException {
+        RedissonClient r1 = createInstance();
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        RRemoteService rs = r1.getRemoteService();
+        rs.register(RemoteInterface.class, new RemoteImpl(), 1, executor);
+        assertThat(rs.getFreeWorkers(RemoteInterface.class)).isEqualTo(1);
+        
+        RedissonClient r2 = createInstance();
+        RemoteInterfaceAsync ri = r2.getRemoteService().get(RemoteInterfaceAsync.class);
+        
+        RFuture<Void> f = ri.timeoutMethod();
+        Thread.sleep(100);
+        assertThat(rs.getFreeWorkers(RemoteInterface.class)).isEqualTo(0);
+        f.get();
+        assertThat(rs.getFreeWorkers(RemoteInterface.class)).isEqualTo(1);
+
+        r1.shutdown();
+        r2.shutdown();
+        
+        executor.shutdown();
+        executor.awaitTermination(1, TimeUnit.MINUTES);
+    }
     
     @Test
     public void testCancelAsync() throws InterruptedException {

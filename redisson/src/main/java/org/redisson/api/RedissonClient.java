@@ -635,6 +635,25 @@ public interface RedissonClient {
      * @return Queue object
      */
     <V> RQueue<V> getQueue(String name, Codec codec);
+    
+    /**
+     * Returns RingBuffer based queue.
+     * 
+     * @param <V> value type
+     * @param name - name of object
+     * @return RingBuffer object
+     */
+    <V> RRingBuffer<V> getRingBuffer(String name);
+    
+    /**
+     * Returns RingBuffer based queue.
+     * 
+     * @param <V> value type
+     * @param name - name of object
+     * @param codec - codec for values
+     * @return RingBuffer object
+     */
+    <V> RRingBuffer<V> getRingBuffer(String name, Codec codec);
 
     /**
      * Returns priority unbounded queue instance by name.
@@ -1079,5 +1098,12 @@ public interface RedissonClient {
      * or was shutdown {@link #isShutdown()} already.
      */
     boolean isShuttingDown();
+
+    /**
+     * Returns id of this Redisson instance
+     * 
+     * @return id
+     */
+    String getId();
 
 }

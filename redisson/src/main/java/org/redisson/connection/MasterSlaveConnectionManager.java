@@ -16,18 +16,19 @@
 package org.redisson.connection;
 
 import java.net.InetSocketAddress;
-import java.net.URI;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReferenceArray;
+import java.util.stream.Collectors;
 
 import org.redisson.Version;
 import org.redisson.api.NodeType;
@@ -48,8 +49,8 @@ import org.redisson.config.TransportMode;
 import org.redisson.misc.CountableListener;
 import org.redisson.misc.InfinitySemaphoreLatch;
 import org.redisson.misc.RPromise;
+import org.redisson.misc.RedisURI;
 import org.redisson.misc.RedissonPromise;
-import org.redisson.misc.URIBuilder;
 import org.redisson.pubsub.PublishSubscribeService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -85,7 +86,7 @@ import io.netty.util.internal.PlatformDependent;
  */
 public class MasterSlaveConnectionManager implements ConnectionManager {
 
-    private final Timeout dummyTimeout = new Timeout() {
+    public static final Timeout DUMMY_TIMEOUT = new Timeout() {
         @Override
         public Timer timer() {
             return null;
@@ -108,11 +109,11 @@ public class MasterSlaveConnectionManager implements ConnectionManager {
 
         @Override
         public boolean cancel() {
-            return false;
+            return true;
         }
     };
 
-    protected final UUID id;
+    protected final String id;
     
     public static final int MAX_SLOT = 16384;
 
@@ -164,7 +165,7 @@ public class MasterSlaveConnectionManager implements ConnectionManager {
     }
 
     protected MasterSlaveConnectionManager(Config cfg, UUID id) {
-        this.id = id;
+        this.id = id.toString();
         Version.logVersion();
 
         if (cfg.getTransportMode() == TransportMode.EPOLL) {
@@ -241,7 +242,7 @@ public class MasterSlaveConnectionManager implements ConnectionManager {
         }
     }
     
-    protected RFuture<RedisConnection> connectToNode(BaseMasterSlaveServersConfig<?> cfg,  URI addr, RedisClient client, String sslHostname) {
+    protected RFuture<RedisConnection> connectToNode(BaseMasterSlaveServersConfig<?> cfg, RedisURI addr, RedisClient client, String sslHostname) {
         final Object key;
         if (client != null) {
             key = client;
@@ -281,22 +282,27 @@ public class MasterSlaveConnectionManager implements ConnectionManager {
         return result;
     }
     
-    public UUID getId() {
+    @Override
+    public String getId() {
         return id;
     }
     
+    @Override
     public boolean isClusterMode() {
         return false;
     }
     
+    @Override
     public CommandSyncService getCommandExecutor() {
         return commandExecutor;
     }
 
+    @Override
     public IdleConnectionWatcher getConnectionWatcher() {
         return connectionWatcher;
     }
 
+    @Override
     public Config getCfg() {
         return cfg;
     }
@@ -342,7 +348,7 @@ public class MasterSlaveConnectionManager implements ConnectionManager {
             } else {
                 entry = createMasterSlaveEntry(config);
             }
-            RFuture<RedisClient> f = entry.setupMasterEntry(config.getMasterAddress());
+            RFuture<RedisClient> f = entry.setupMasterEntry(new RedisURI(config.getMasterAddress()));
             f.syncUninterruptibly();
         
             for (int slot = singleSlotRange.getStartSlot(); slot < singleSlotRange.getEndSlot() + 1; slot++) {
@@ -358,15 +364,16 @@ public class MasterSlaveConnectionManager implements ConnectionManager {
 
     protected void startDNSMonitoring(RedisClient masterHost) {
         if (config.getDnsMonitoringInterval() != -1) {
+            Set<RedisURI> slaveAddresses = config.getSlaveAddresses().stream().map(r -> new RedisURI(r)).collect(Collectors.toSet());
             dnsMonitor = new DNSMonitor(this, masterHost, 
-                    config.getSlaveAddresses(), config.getDnsMonitoringInterval(), resolverGroup);
+                                            slaveAddresses, config.getDnsMonitoringInterval(), resolverGroup);
             dnsMonitor.start();
         }
     }
     
     protected MasterSlaveEntry createMasterSlaveEntry(MasterSlaveServersConfig config) {
         MasterSlaveEntry entry = new MasterSlaveEntry(this, config);
-        List<RFuture<Void>> fs = entry.initSlaveBalancer(java.util.Collections.<URI>emptySet());
+        List<RFuture<Void>> fs = entry.initSlaveBalancer(java.util.Collections.<RedisURI>emptySet());
         for (RFuture<Void> future : fs) {
             future.syncUninterruptibly();
         }
@@ -412,31 +419,31 @@ public class MasterSlaveConnectionManager implements ConnectionManager {
     }
 
     @Override
-    public RedisClient createClient(NodeType type, URI address, String sslHostname) {
+    public RedisClient createClient(NodeType type, RedisURI address, String sslHostname) {
         RedisClient client = createClient(type, address, config.getConnectTimeout(), config.getTimeout(), sslHostname);
         return client;
     }
     
     @Override
-    public RedisClient createClient(NodeType type, InetSocketAddress address, URI uri, String sslHostname) {
+    public RedisClient createClient(NodeType type, InetSocketAddress address, RedisURI uri, String sslHostname) {
         RedisClient client = createClient(type, address, uri, config.getConnectTimeout(), config.getTimeout(), sslHostname);
         return client;
     }
 
     @Override
-    public RedisClient createClient(NodeType type, URI address, int timeout, int commandTimeout, String sslHostname) {
+    public RedisClient createClient(NodeType type, RedisURI address, int timeout, int commandTimeout, String sslHostname) {
         RedisClientConfig redisConfig = createRedisConfig(type, address, timeout, commandTimeout, sslHostname);
         return RedisClient.create(redisConfig);
     }
     
-    private RedisClient createClient(NodeType type, InetSocketAddress address, URI uri, int timeout, int commandTimeout, String sslHostname) {
+    private RedisClient createClient(NodeType type, InetSocketAddress address, RedisURI uri, int timeout, int commandTimeout, String sslHostname) {
         RedisClientConfig redisConfig = createRedisConfig(type, null, timeout, commandTimeout, sslHostname);
         redisConfig.setAddress(address, uri);
         return RedisClient.create(redisConfig);
     }
 
 
-    protected RedisClientConfig createRedisConfig(NodeType type, URI address, int timeout, int commandTimeout, String sslHostname) {
+    protected RedisClientConfig createRedisConfig(NodeType type, RedisURI address, int timeout, int commandTimeout, String sslHostname) {
         RedisClientConfig redisConfig = new RedisClientConfig();
         redisConfig.setAddress(address)
               .setTimer(timer)
@@ -489,9 +496,9 @@ public class MasterSlaveConnectionManager implements ConnectionManager {
         return null;
     }
     
-    private MasterSlaveEntry getEntry(URI addr) {
+    private MasterSlaveEntry getEntry(RedisURI addr) {
         for (MasterSlaveEntry entry : client2entry.values()) {
-            if (URIBuilder.compare(entry.getClient().getAddr(), addr)) {
+            if (RedisURI.compare(entry.getClient().getAddr(), addr)) {
                 return entry;
             }
             if (entry.hasSlave(addr)) {
@@ -521,7 +528,7 @@ public class MasterSlaveConnectionManager implements ConnectionManager {
         return slot2entry.get(slot);
     }
     
-    protected final RFuture<RedisClient> changeMaster(int slot, URI address) {
+    protected final RFuture<RedisClient> changeMaster(int slot, RedisURI address) {
         final MasterSlaveEntry entry = getEntry(slot);
         final RedisClient oldClient = entry.getClient();
         RFuture<RedisClient> future = entry.changeMaster(address);
@@ -554,12 +561,11 @@ public class MasterSlaveConnectionManager implements ConnectionManager {
     public RFuture<RedisConnection> connectionWriteOp(NodeSource source, RedisCommand<?> command) {
         MasterSlaveEntry entry = getEntry(source);
         if (entry == null) {
-            RedisNodeNotFoundException ex = new RedisNodeNotFoundException("Node: " + source + " hasn't been discovered yet");
-            return RedissonPromise.newFailedFuture(ex);
+            return createNodeNotFoundFuture(source);
         }
         // fix for https://github.com/redisson/redisson/issues/1548
         if (source.getRedirect() != null 
-                && !URIBuilder.compare(entry.getClient().getAddr(), source.getAddr()) 
+                && !RedisURI.compare(entry.getClient().getAddr(), source.getAddr()) 
                     && entry.hasSlave(source.getAddr())) {
             return entry.redirectedConnectionWriteOp(command, source.getAddr());
         }
@@ -585,8 +591,7 @@ public class MasterSlaveConnectionManager implements ConnectionManager {
     public RFuture<RedisConnection> connectionReadOp(NodeSource source, RedisCommand<?> command) {
         MasterSlaveEntry entry = getEntry(source);
         if (entry == null) {
-            RedisNodeNotFoundException ex = new RedisNodeNotFoundException("Node: " + source + " hasn't been discovered yet");
-            return RedissonPromise.newFailedFuture(ex);
+            return createNodeNotFoundFuture(source);
         }
 
         if (source.getRedirect() != null) {
@@ -597,6 +602,16 @@ public class MasterSlaveConnectionManager implements ConnectionManager {
         }
         
         return entry.connectionReadOp(command);
+    }
+
+    protected RFuture<RedisConnection> createNodeNotFoundFuture(NodeSource source) {
+        RedisNodeNotFoundException ex;
+        if (source.getSlot() != null && source.getAddr() == null && source.getRedisClient() == null) {
+            ex = new RedisNodeNotFoundException("Node for slot: " + source.getSlot() + " hasn't been discovered yet. Check cluster slots coverage using CLUSTER NODES command");
+        } else {
+            ex = new RedisNodeNotFoundException("Node: " + source + " hasn't been discovered yet.");
+        }
+        return RedissonPromise.newFailedFuture(ex);
     }
 
     @Override
@@ -683,7 +698,7 @@ public class MasterSlaveConnectionManager implements ConnectionManager {
             return timer.newTimeout(task, delay, unit);
         } catch (IllegalStateException e) {
             // timer is shutdown
-            return dummyTimeout;
+            return DUMMY_TIMEOUT;
         }
     }
 
@@ -714,12 +729,12 @@ public class MasterSlaveConnectionManager implements ConnectionManager {
         return executor;
     }
     
-    public URI getLastClusterNode() {
+    public RedisURI getLastClusterNode() {
         return null;
     }
 
     @Override
-    public URI applyNatMap(URI address) {
+    public RedisURI applyNatMap(RedisURI address) {
         return address;
     }
 }

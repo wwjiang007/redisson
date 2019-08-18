@@ -1,6 +1,6 @@
 # Redisson - Redis Java client<br/>with features of In-Memory Data Grid
 
-[Quick start](https://github.com/redisson/redisson#quick-start) | [Documentation](https://github.com/redisson/redisson/wiki) | [Javadocs](http://www.javadoc.io/doc/org.redisson/redisson/3.10.6) | [Changelog](https://github.com/redisson/redisson/blob/master/CHANGELOG.md) | [Code examples](https://github.com/redisson/redisson-examples) | [FAQs](https://github.com/redisson/redisson/wiki/16.-FAQ) | [Report an issue](https://github.com/redisson/redisson/issues/new) | **[Redisson PRO](https://redisson.pro)**
+[Quick start](https://github.com/redisson/redisson#quick-start) | [Documentation](https://github.com/redisson/redisson/wiki) | [Javadocs](http://www.javadoc.io/doc/org.redisson/redisson/3.11.0) | [Changelog](https://github.com/redisson/redisson/blob/master/CHANGELOG.md) | [Code examples](https://github.com/redisson/redisson-examples) | [FAQs](https://github.com/redisson/redisson/wiki/16.-FAQ) | [Report an issue](https://github.com/redisson/redisson/issues/new)
 
 Based on high-performance async and lock-free Java Redis client and [Netty](http://netty.io) framework.  
 JDK compatibility:  1.8 - 12, Android  
@@ -51,7 +51,7 @@ JDK compatibility:  1.8 - 12, Android
 * Supports OSGi  
 * Supports SSL  
 * Supports many popular codecs ([Jackson JSON](https://github.com/FasterXML/jackson), [Avro](http://avro.apache.org/), [Smile](http://wiki.fasterxml.com/SmileFormatSpec), [CBOR](http://cbor.io/), [MsgPack](http://msgpack.org/), [Kryo](https://github.com/EsotericSoftware/kryo), [Amazon Ion](https://amzn.github.io/ion-docs/), [FST](https://github.com/RuedigerMoeller/fast-serialization), [LZ4](https://github.com/jpountz/lz4-java), [Snappy](https://github.com/xerial/snappy-java) and JDK Serialization)
-* With over 1800 unit tests  
+* With over 2000 unit tests  
 <!--
 Used by
 ================================
@@ -103,27 +103,59 @@ Used by
     <dependency>
        <groupId>org.redisson</groupId>
        <artifactId>redisson</artifactId>
-       <version>3.10.7</version>
+       <version>3.11.2</version>
     </dependency>  
 
 
 #### Gradle
-    compile 'org.redisson:redisson:3.10.7'  
+    compile 'org.redisson:redisson:3.11.2'  
 
 #### Java
 
 ```java
 // 1. Create config object
-Config = ...
+Config config = new Config();
+config.useClusterServers()
+       // use "rediss://" for SSL connection
+      .addNodeAddress("redis://127.0.0.1:7181");
 
+// or read config from file
+config = Config.fromYAML(new File("config-file.yaml")); 
+```
+
+```java
 // 2. Create Redisson instance
+
+// Sync and Async API
 RedissonClient redisson = Redisson.create(config);
 
-// 3. Get Redis based object or service you need
+// Reactive API
+RedissonReactiveClient redissonReactive = Redisson.createReactive(config);
+
+// RxJava2 API
+RedissonRxClient redissonRx = Redisson.createRx(config);
+```
+
+```java
+// 3. Get Redis based Map
 RMap<MyKey, MyValue> map = redisson.getMap("myMap");
 
+RMapReactive<MyKey, MyValue> mapReactive = redissonReactive.getMap("myMap");
+
+RMapRx<MyKey, MyValue> mapRx = redissonRx.getMap("myMap");
+```
+
+```java
+// 4. Get Redis based Lock
 RLock lock = redisson.getLock("myLock");
 
+RLockReactive lockReactive = redissonReactive.getLock("myLock");
+
+RLockRx lockRx = redissonRx.getLock("myLock");
+```
+
+```java
+// 4. Get Redis based ExecutorService
 RExecutorService executor = redisson.getExecutorService("myExecutorService");
 
 // over 30 different Redis based objects and services ...
@@ -134,8 +166,8 @@ Consider __[Redisson PRO](https://redisson.pro)__ version for advanced features 
 
 ## Downloads
    
-[Redisson 3.10.7](https://repository.sonatype.org/service/local/artifact/maven/redirect?r=central-proxy&g=org.redisson&a=redisson&v=3.10.7&e=jar),
-[Redisson node 3.10.7](https://repository.sonatype.org/service/local/artifact/maven/redirect?r=central-proxy&g=org.redisson&a=redisson-all&v=3.10.7&e=jar)  
+[Redisson 3.11.2](https://repository.sonatype.org/service/local/artifact/maven/redirect?r=central-proxy&g=org.redisson&a=redisson&v=3.11.2&e=jar),
+[Redisson node 3.11.2](https://repository.sonatype.org/service/local/artifact/maven/redirect?r=central-proxy&g=org.redisson&a=redisson-all&v=3.11.2&e=jar)  
 
 ## FAQs
 
